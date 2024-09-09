@@ -5,45 +5,48 @@ import androidx.compose.runtime.Composable
 
 import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
-import android.os.Bundle
-import android.os.Message
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.AspectRatio
-import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.velvit.roadvision.Constants.LABELS_PATH
 import com.velvit.roadvision.Constants.MODEL_PATH
-import com.velvit.roadvision.R
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import com.velvit.roadvision.util.detector.BoundingBox
+import com.velvit.roadvision.util.detector.Detector
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -51,9 +54,45 @@ fun CameraScreen()  {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraPermissionState = rememberPermissionState(permission = Manifest.permission.CAMERA)
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+
+    var time by remember { mutableStateOf("0 ms") }
+    var detector by remember { mutableStateOf<Detector?>(null) }
+
+    val detectorListener = object : Detector.DetectorListener {
+        override fun onDetect(boundingBoxes: List<BoundingBox>, inferenceTime: Long) {
+            Log.d("I", "On detect")
+            //inferenceTime = "$infTime ms"
+            time = "hel2 ms"
+            //boundingBoxes = boundingBoxesList
+        }
+
+        override fun onEmptyDetect() {
+            Log.d("I", "On empty detect")
+            time = "hel ms"
+            //boundingBoxes = emptyList()
+        }
+    }
 
     LaunchedEffect(Unit) {
+        Log.d("I","LAUNCH CAMERA SCREEN")
         cameraPermissionState.launchPermissionRequest()
+
+        if(cameraPermissionState.status.isGranted) {
+            cameraExecutor.execute {
+                Log.d("I", "Initializing detector")
+                detector = Detector(context, MODEL_PATH, LABELS_PATH, detectorListener) {
+                    showToast(context, it)
+                }
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            detector?.close()
+            cameraExecutor.shutdown()
+        }
     }
 
     if (!cameraPermissionState.status.isGranted) {
@@ -68,23 +107,48 @@ fun CameraScreen()  {
             }
         }
     } else {
-        CameraPreview(context, lifecycleOwner)
+        Box(
+            modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)) {
+            CameraPreview(context, lifecycleOwner, cameraExecutor, detector)
+            Text(
+                text = time,
+                modifier = Modifier
+                    .padding(32.dp)
+                    .align(Alignment.TopEnd),
+                color = Color.White,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
 @Composable
-fun CameraPreview(context: Context, lifecycleOwner: LifecycleOwner) {
+fun CameraPreview(
+    context: Context,
+    lifecycleOwner: LifecycleOwner,
+    cameraExecutor: ExecutorService,
+    detector: Detector?
+) {
     val previewView = remember { PreviewView(context) }
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+
+    DisposableEffect(lifecycleOwner) {
+        val cameraProvider = cameraProviderFuture.get()
+        onDispose {
+            cameraProvider.unbindAll()
+        }
+    }
 
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = {
             previewView.apply {
                 // Initialize the camera provider and bind the lifecycle
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
                 cameraProviderFuture.addListener({
                     val cameraProvider = cameraProviderFuture.get()
-                    bindPreview(cameraProvider, lifecycleOwner, this)
+                    bindPreview(cameraProvider, lifecycleOwner, this, cameraExecutor, detector)
                 }, ContextCompat.getMainExecutor(context))
             }
         }
@@ -94,7 +158,9 @@ fun CameraPreview(context: Context, lifecycleOwner: LifecycleOwner) {
 private fun bindPreview(
     cameraProvider: ProcessCameraProvider,
     lifecycleOwner: LifecycleOwner,
-    previewView: PreviewView
+    previewView: PreviewView,
+    cameraExecutor: ExecutorService,
+    detector: Detector?
 ) {
     val preview = Preview.Builder()
         .build()
@@ -105,16 +171,48 @@ private fun bindPreview(
     val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
     try {
-        // Unbind all use cases before rebinding
-        cameraProvider.unbindAll()
+        Log.d("HELP", "Start try")
+        val imageAnalysis = ImageAnalysis.Builder()
+            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+            .build()
 
-        // Bind the camera to the lifecycle
+        if(detector != null) {
+            imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                Log.d("ImageAnalysis", "Image received for analysis")
+                val bitmapBuffer = Bitmap.createBitmap(
+                    imageProxy.width,
+                    imageProxy.height,
+                    Bitmap.Config.ARGB_8888
+                )
+                imageProxy.use { bitmapBuffer.copyPixelsFromBuffer(imageProxy.planes[0].buffer) }
+
+                val matrix = Matrix().apply {
+                    postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
+                }
+
+                val rotatedBitmap = Bitmap.createBitmap(
+                    bitmapBuffer, 0, 0, bitmapBuffer.width, bitmapBuffer.height, matrix, true
+                )
+
+                detector.detect(rotatedBitmap)
+                imageProxy.close()
+            }
+        }
+
+        cameraProvider.unbindAll()
         cameraProvider.bindToLifecycle(
             lifecycleOwner,
             cameraSelector,
-            preview
+            preview,
+            imageAnalysis
         )
     } catch (e: Exception) {
         Log.e("CameraPreview", "Use case binding failed", e)
     }
+}
+
+fun showToast(context: Context, message: String) {
+    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
 }
