@@ -7,7 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.velvit.roadvision.ui.screens.CameraScreen
+import com.velvit.roadvision.ui.screens.camera_screen.CameraScreen
 import com.velvit.roadvision.ui.screens.HomeScreen
 import com.velvit.roadvision.ui.screens.SettingsScreen
 

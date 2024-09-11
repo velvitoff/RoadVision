@@ -1,4 +1,4 @@
-package com.velvit.roadvision.ui.screens
+package com.velvit.roadvision.ui.screens.camera_screen
 
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,17 +54,18 @@ fun CameraScreen()  {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraPermissionState = rememberPermissionState(permission = Manifest.permission.CAMERA)
+    var boundingBoxesData by remember { mutableStateOf<List<BoundingBox>>(listOf()) }
 
     var time by remember { mutableStateOf("0 ms") }
 
     val detectorListener = object : Detector.DetectorListener {
         override fun onDetect(boundingBoxes: List<BoundingBox>, inferenceTime: Long) {
             time = "$inferenceTime ms"
-            //boundingBoxes = boundingBoxesList
+            boundingBoxesData = boundingBoxes
         }
 
         override fun onEmptyDetect() {
-            //boundingBoxes = emptyList()
+            boundingBoxesData = emptyList()
         }
     }
 
@@ -87,9 +88,10 @@ fun CameraScreen()  {
     } else {
         Box(
             modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)) {
+                .fillMaxSize()
+                .background(Color.Black)) {
             CameraPreview(context, lifecycleOwner, detectorListener)
+            OverlayBoxes(boundingBoxes = boundingBoxesData)
             Text(
                 text = time,
                 modifier = Modifier
@@ -167,7 +169,7 @@ private fun bindPreview(
     try {
         Log.d("I228", "Start try")
         val imageAnalysis = ImageAnalysis.Builder()
-            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+            //.setTargetAspectRatio(AspectRatio.RATIO_4_3)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .build()
