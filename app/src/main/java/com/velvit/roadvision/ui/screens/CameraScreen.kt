@@ -54,45 +54,23 @@ fun CameraScreen()  {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraPermissionState = rememberPermissionState(permission = Manifest.permission.CAMERA)
-    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
 
     var time by remember { mutableStateOf("0 ms") }
-    var detector by remember { mutableStateOf<Detector?>(null) }
 
     val detectorListener = object : Detector.DetectorListener {
         override fun onDetect(boundingBoxes: List<BoundingBox>, inferenceTime: Long) {
-            Log.d("I", "On detect")
-            //inferenceTime = "$infTime ms"
-            time = "hel2 ms"
+            time = "$inferenceTime ms"
             //boundingBoxes = boundingBoxesList
         }
 
         override fun onEmptyDetect() {
-            Log.d("I", "On empty detect")
-            time = "hel ms"
             //boundingBoxes = emptyList()
         }
     }
 
     LaunchedEffect(Unit) {
-        Log.d("I","LAUNCH CAMERA SCREEN")
+        Log.d("I228","LAUNCH CAMERA SCREEN")
         cameraPermissionState.launchPermissionRequest()
-
-        if(cameraPermissionState.status.isGranted) {
-            cameraExecutor.execute {
-                Log.d("I", "Initializing detector")
-                detector = Detector(context, MODEL_PATH, LABELS_PATH, detectorListener) {
-                    showToast(context, it)
-                }
-            }
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            detector?.close()
-            cameraExecutor.shutdown()
-        }
     }
 
     if (!cameraPermissionState.status.isGranted) {
@@ -111,7 +89,7 @@ fun CameraScreen()  {
             modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)) {
-            CameraPreview(context, lifecycleOwner, cameraExecutor, detector)
+            CameraPreview(context, lifecycleOwner, detectorListener)
             Text(
                 text = time,
                 modifier = Modifier
@@ -128,16 +106,32 @@ fun CameraScreen()  {
 fun CameraPreview(
     context: Context,
     lifecycleOwner: LifecycleOwner,
-    cameraExecutor: ExecutorService,
-    detector: Detector?
+    detectorListener: Detector.DetectorListener,
 ) {
     val previewView = remember { PreviewView(context) }
     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    var detector by remember { mutableStateOf<Detector?>(null) }
+
+    LaunchedEffect(Unit) {
+        detector = Detector(context, MODEL_PATH, LABELS_PATH, detectorListener) {
+            showToast(context, it)
+        }
+        Log.d("I228", "detector is initialized $detector")
+    }
 
     DisposableEffect(lifecycleOwner) {
         val cameraProvider = cameraProviderFuture.get()
         onDispose {
             cameraProvider.unbindAll()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            detector?.close()
+            cameraExecutor.shutdown()
         }
     }
 
@@ -171,16 +165,18 @@ private fun bindPreview(
     val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
     try {
-        Log.d("HELP", "Start try")
+        Log.d("I228", "Start try")
         val imageAnalysis = ImageAnalysis.Builder()
             .setTargetAspectRatio(AspectRatio.RATIO_4_3)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .build()
+        Log.d("I228", "Analyzer built")
+        Log.d("I228", "detector is $detector")
 
         if(detector != null) {
             imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                Log.d("ImageAnalysis", "Image received for analysis")
+                Log.d("I228", "Image received for analysis")
                 val bitmapBuffer = Bitmap.createBitmap(
                     imageProxy.width,
                     imageProxy.height,

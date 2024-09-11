@@ -39,7 +39,6 @@ class Detector(
         .build()
 
     init {
-        Log.d("I", "Init detector")
         val compatList = CompatibilityList()
 
         val options = Interpreter.Options().apply{
