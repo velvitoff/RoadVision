@@ -19,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
@@ -138,7 +139,9 @@ fun CameraPreview(
     }
 
     AndroidView(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .aspectRatio(4f / 3f),
         factory = {
             previewView.apply {
                 // Initialize the camera provider and bind the lifecycle
@@ -169,7 +172,7 @@ private fun bindPreview(
     try {
         Log.d("I228", "Start try")
         val imageAnalysis = ImageAnalysis.Builder()
-            //.setTargetAspectRatio(AspectRatio.RATIO_4_3)
+            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .build()
